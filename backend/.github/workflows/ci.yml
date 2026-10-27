@@ -1,0 +1,102 @@
+# .github/workflows/ci.yml
+
+name: CI
+
+# - push sur une branche perso : tests, puis merge automatique dans dev si OK
+# - dev : tests, puis build et push de l'image Docker
+on:
+  push:
+    branches-ignore:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Installer Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Lancer les tests
+        run: npm test
+
+  merge-dev:
+    # Merge automatique de la branche perso dans dev, si les tests passent
+    if: github.event_name == 'push' && github.ref != 'refs/heads/dev'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    concurrency:
+      group: merge-dev
+      cancel-in-progress: false
+
+    steps:
+      - name: Récupérer dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Merger la branche dans dev
+        id: merge
+        env:
+          BRANCHE: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          if git merge-base --is-ancestor "$SHA" HEAD; then
+            echo "Déjà présent dans dev, rien à merger"
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git merge --no-ff "$SHA" -m "<chores> merge auto de $BRANCHE dans dev"
+          git push origin dev
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+
+      # Un push fait avec GITHUB_TOKEN ne relance pas la CI : on la déclenche sur dev
+      - name: Relancer la CI sur dev
+        if: steps.merge.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run ci.yml --repo "${{ github.repository }}" --ref dev
+
+  build:
+    # Build et push de l'image uniquement sur dev, si les tests passent
+    if: github.ref == 'refs/heads/dev' && github.event_name != 'pull_request'
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code
+        uses: actions/checkout@v4
+
+      - name: Se connecter à Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build de l'image
+        run: |
+          docker build \
+            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:${{ github.sha }} \
+            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:latest \
+            .
+
+      - name: Push vers Docker Hub
+        run: |
+          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:${{ github.sha }}
+          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:latest

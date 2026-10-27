@@ -1,34 +1,36 @@
 
 services:
   backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: mario987456/projet_ci_cd:backend
+#    build:
+#      context: ./backend
+#      dockerfile: Dockerfile
     ports:
-      - "____:3000"            # 1. Port du backend sur l'hôte
+      - "127.0.0.1:3000:3000"            # 1. Port du backend sur l'hôte
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ____           # 2. Dossier du frontend
-      dockerfile: Dockerfile
+    image: mario987456/projet_ci_cd:frontend
+#    build:
+#      context: ./frontend          # 2. Dossier du frontend
+#      dockerfile: Dockerfile
     ports:
-      - "____:80"              # 3. Port du frontend sur l'hôte
+      - "127.0.0.1:4200:80"              # 3. Port du frontend sur l'hôte
     depends_on:
-      - ____                  # 4. Service à démarrer avant le frontend
+      - backend                  # 4. Service à démarrer avant le frontend
     restart: unless-stopped
 
 # 5. Quel nom de service le frontend doit-il utiliser
 #    pour contacter le backend dans le réseau Docker ?
-#    Réponse : ____
+#    Réponse : http://backend:3000
 
 # 6. Quelle commande démarre les deux services
 #    en reconstruisant les images ?
-#    Réponse : ____
+#    Réponse : docker compose up -d --build
 
 # 7. Quelle commande affiche les conteneurs du projet ?
-#    Réponse : ____
+#    Réponse : docker compose ps
 
 # 8. Quelle commande arrête et supprime les conteneurs
 #    du projet ?
-#    Réponse : ____
+#    Réponse : docker compose down
