@@ -15,7 +15,7 @@ services:
 #      context: ./frontend          # 2. Dossier du frontend
 #      dockerfile: Dockerfile
     ports:
-      - "127.0.0.1:4200:80"              # 3. Port du frontend sur l'hôte
+      - "127.0.0.1:4000:80"              # 3. Port du frontend sur l'hôte
     depends_on:
       - backend                  # 4. Service à démarrer avant le frontend
     restart: unless-stopped
