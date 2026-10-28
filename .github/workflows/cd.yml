@@ -1,0 +1,97 @@
+name: Continuous Deployment
+
+# Déclenché par ci.yml après le push des images sur Docker Hub
+on:
+  workflow_dispatch:
+    inputs:
+      image_sha:
+        description: "SHA du commit correspondant aux images Docker"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Un seul déploiement à la fois sur la VM
+concurrency:
+  group: projet-ci-cd-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Déploiement sur la VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Déployer sur la VM
+        uses: appleboy/ssh-action@v1
+
+        env:
+          BACKEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:backend-${{ inputs.image_sha }}
+          FRONTEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:frontend-${{ inputs.image_sha }}
+
+        with:
+          host: ${{ vars.VM_HOST }}
+          username: ${{ vars.VM_USER }}
+          password: ${{ secrets.VM_PASSWORD }}
+
+          envs: BACKEND_IMAGE,FRONTEND_IMAGE
+          command_timeout: 15m
+
+          script: |
+            set -eu
+
+            echo "=== DEPLOIEMENT DOCKER ==="
+            echo "Image backend  : $BACKEND_IMAGE"
+            echo "Image frontend : $FRONTEND_IMAGE"
+
+            cd ~/projet_ci_cd
+
+            # Télécharge les images publiées par la CI puis relance les conteneurs
+            ./deploy.sh
+
+            echo "=== VERIFICATION DU BACKEND ==="
+
+            backend_pret=0
+
+            for tentative in $(seq 1 20); do
+
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+                http://127.0.0.1:3000/ || true)
+
+              if [ "$code" != "000" ]; then
+                backend_pret=1
+                break
+              fi
+
+              echo "Backend indisponible - tentative $tentative/20"
+              sleep 3
+
+            done
+
+            if [ "$backend_pret" -ne 1 ]; then
+
+              echo "ERREUR : le backend ne répond pas."
+
+              docker compose ps
+
+              docker compose logs --tail=50 backend
+
+              exit 1
+            fi
+
+            echo "=== DEPLOIEMENT TERMINE AVEC SUCCES ==="
+
+  zap:
+    name: Scan de sécurité ZAP
+    needs: deploy                       # attend que le déploiement soit terminé
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan ZAP Baseline
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: 'https://g2.valentinduflot.fr'
+          allow_issue_writing: false      # ne pas créer d'issue GitHub
+          fail_action: false              # ne pas faire échouer le job si des alertes sont trouvées
+          artifact_name: zap-report
