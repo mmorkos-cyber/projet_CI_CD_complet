@@ -28,8 +28,8 @@ jobs:
         uses: appleboy/ssh-action@v1
 
         env:
-          BACKEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-backend:${{ inputs.image_sha }}
-          FRONTEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-frontend:${{ inputs.image_sha }}
+          BACKEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:backend-${{ inputs.image_sha }}
+          FRONTEND_IMAGE: ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:frontend-${{ inputs.image_sha }}
 
         with:
           host: ${{ vars.VM_HOST }}
