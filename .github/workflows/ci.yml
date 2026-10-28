@@ -3,7 +3,7 @@
 name: CI
 
 # - push sur une branche perso : tests, puis merge automatique dans dev si OK
-# - dev : tests, puis build et push de l'image Docker
+# - dev : tests, puis build et push des images Docker, puis déploiement
 on:
   push:
     branches-ignore:
@@ -32,13 +32,48 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
+      - name: Audit de sécurité (backend)
+        run: npm audit --audit-level=high --json > audit-report.json
+
+      - name: Audit de sécurité (frontend)
+        run: npm audit --audit-level=high --json > audit-report.json
+        working-directory: frontend
+
+      - name: Sauvegarder le rapport d'audit (backend)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report-backend
+          path: backend/audit-report.json
+
+      - name: Sauvegarder le rapport d'audit (frontend)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-report-frontend
+          path: frontend/audit-report.json
+
       - name: Lancer les tests
         run: npm test
+  
+  gitleaks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer le code avec tout l'historique
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan Gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   merge-dev:
     # Merge automatique de la branche perso dans dev, si les tests passent
     if: github.event_name == 'push' && github.ref != 'refs/heads/dev'
-    needs: test
+    needs: [test, gitleaks]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -79,10 +114,13 @@ jobs:
         run: gh workflow run ci.yml --repo "${{ github.repository }}" --ref dev
 
   build:
-    # Build et push de l'image uniquement sur dev, si les tests passent
+    # Build et push des images uniquement sur dev, si les tests passent
     if: github.ref == 'refs/heads/dev' && github.event_name != 'pull_request'
-    needs: test
+    needs: [test, gitleaks]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write          # nécessaire pour lancer cd.yml
 
     steps:
       - name: Récupérer le code
@@ -97,17 +135,24 @@ jobs:
       - name: Build des images
         run: |
           docker build \
-            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-backend:${{ github.sha }} \
-            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-backend:latest \
+            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:backend-${{ github.sha }} \
+            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:backend-latest \
             backend
           docker build \
-            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-frontend:${{ github.sha }} \
-            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-frontend:latest \
+            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:frontend-${{ github.sha }} \
+            -t ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:frontend-latest \
             frontend
 
       - name: Push vers Docker Hub
         run: |
-          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-backend:${{ github.sha }}
-          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-backend:latest
-          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-frontend:${{ github.sha }}
-          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd-frontend:latest
+          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:backend-${{ github.sha }}
+          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:backend-latest
+          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:frontend-${{ github.sha }}
+          docker push ${{ vars.DOCKERHUB_USERNAME }}/projet_ci_cd:frontend-latest
+
+      - name: Lancer le déploiement
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run cd.yml --repo "${{ github.repository }}" --ref dev -f image_sha=${{ github.sha }}
+    
+  

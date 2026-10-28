@@ -82,3 +82,16 @@ jobs:
             fi
 
             echo "=== DEPLOIEMENT TERMINE AVEC SUCCES ==="
+
+  zap:
+    name: Scan de sécurité ZAP
+    needs: deploy                       # attend que le déploiement soit terminé
+    runs-on: ubuntu-latest
+    steps:
+      - name: Scan ZAP Baseline
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          target: 'https://g2.valentinduflot.fr'
+          allow_issue_writing: false      # ne pas créer d'issue GitHub
+          fail_action: false              # ne pas faire échouer le job si des alertes sont trouvées
+          artifact_name: zap-report
