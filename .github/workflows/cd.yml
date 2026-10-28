@@ -49,8 +49,7 @@ jobs:
             cd ~/projet_ci_cd
 
             # Télécharge les images publiées par la CI puis relance les conteneurs
-            docker compose pull
-            docker compose up -d
+            ./deploy.sh
 
             echo "=== VERIFICATION DU BACKEND ==="
 
